@@ -15,17 +15,20 @@
 
 package com.ecsteam.nozzle.influxdb.config;
 
+import com.ecsteam.nozzle.influxdb.nozzle.FirehoseAuthenticationManager;
 import com.ecsteam.nozzle.influxdb.nozzle.FirehoseReader;
 import com.ecsteam.nozzle.influxdb.nozzle.InfluxDBWriter;
 import org.cloudfoundry.reactor.DefaultConnectionContext;
 import org.cloudfoundry.reactor.TokenProvider;
 import org.cloudfoundry.reactor.doppler.ReactorDopplerClient;
 import org.cloudfoundry.reactor.tokenprovider.ClientCredentialsGrantTokenProvider;
+import org.cloudfoundry.reactor.uaa.ReactorUaaClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
+import org.springframework.util.StringUtils;
 
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -35,23 +38,42 @@ import java.net.URL;
 public class FirehoseConfig {
 	private DefaultConnectionContext connectionContext(String apiHost, Boolean skipSslValidation) {
 		return DefaultConnectionContext.builder()
-			.apiHost(apiHost)
-			.skipSslValidation(skipSslValidation)
-			.build();
+				.apiHost(apiHost)
+				.skipSslValidation(skipSslValidation)
+				.build();
 	}
 
 	private TokenProvider tokenProvider(String clientId, String clientSecret) {
 		return ClientCredentialsGrantTokenProvider.builder()
-			.clientId(clientId)
-			.clientSecret(clientSecret)
-			.build();
+				.clientId(clientId)
+				.clientSecret(clientSecret)
+				.build();
+	}
+
+	private ReactorUaaClient uaaClient(NozzleProperties properties) {
+		if (StringUtils.hasText(properties.getAdminClientId()) &&
+				StringUtils.hasText(properties.getAdminClientSecret())) {
+
+			return ReactorUaaClient.builder()
+					.connectionContext(connectionContext(getApiHost(properties), properties.isSkipSslValidation()))
+					.tokenProvider(tokenProvider(properties.getAdminClientId(), properties.getAdminClientSecret())).build();
+		}
+
+		return null;
 	}
 
 	private ReactorDopplerClient dopplerClient(NozzleProperties properties) {
 		return ReactorDopplerClient.builder()
-			.connectionContext(connectionContext(getApiHost(properties), properties.isSkipSslValidation()))
-			.tokenProvider(tokenProvider(properties.getClientId(), properties.getClientSecret()))
-			.build();
+				.connectionContext(connectionContext(getApiHost(properties), properties.isSkipSslValidation()))
+				.tokenProvider(tokenProvider(properties.getClientId(), properties.getClientSecret()))
+				.build();
+	}
+
+	@Bean
+	@Profile("!test")
+	@Autowired
+	FirehoseAuthenticationManager authManager(NozzleProperties properties) {
+		return new FirehoseAuthenticationManager(uaaClient(properties), properties);
 	}
 
 	@Bean

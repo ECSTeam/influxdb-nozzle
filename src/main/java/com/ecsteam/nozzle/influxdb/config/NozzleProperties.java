@@ -39,6 +39,16 @@ public class NozzleProperties {
 	private String clientSecret;
 
 	/**
+	 * The UAA Admin Client Id
+	 */
+	private String adminClientId;
+
+	/**
+	 * The UAA Admin Client Secret
+	 */
+	private String adminClientSecret;
+
+	/**
 	 * A unique subscription ID used by the Firehose. Instances of a nozzle with
 	 * the same subscription id will have messages evenly spread across them.
 	 */
