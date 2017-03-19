@@ -1,4 +1,4 @@
-/*******************************************************************************
+/*
  *  Copyright 2017 ECS Team, Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use
@@ -11,24 +11,27 @@
  *  under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
  *  CONDITIONS OF ANY KIND, either express or implied. See the License for the
  *  specific language governing permissions and limitations under the License.
- ******************************************************************************/
+ */
 
 package com.ecsteam.nozzle.influxdb.config;
 
 import com.ecsteam.nozzle.influxdb.nozzle.FirehoseAuthenticationManager;
 import com.ecsteam.nozzle.influxdb.nozzle.FirehoseReader;
 import com.ecsteam.nozzle.influxdb.nozzle.InfluxDBWriter;
+import org.cloudfoundry.doppler.DopplerClient;
 import org.cloudfoundry.reactor.DefaultConnectionContext;
 import org.cloudfoundry.reactor.TokenProvider;
 import org.cloudfoundry.reactor.doppler.ReactorDopplerClient;
 import org.cloudfoundry.reactor.tokenprovider.ClientCredentialsGrantTokenProvider;
 import org.cloudfoundry.reactor.uaa.ReactorUaaClient;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.util.StringUtils;
+import org.springframework.web.client.RestTemplate;
 
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -62,7 +65,8 @@ public class FirehoseConfig {
 		return null;
 	}
 
-	private ReactorDopplerClient dopplerClient(NozzleProperties properties) {
+	@Bean
+	DopplerClient dopplerClient(NozzleProperties properties) {
 		return ReactorDopplerClient.builder()
 				.connectionContext(connectionContext(getApiHost(properties), properties.isSkipSslValidation()))
 				.tokenProvider(tokenProvider(properties.getClientId(), properties.getClientSecret()))
@@ -70,17 +74,20 @@ public class FirehoseConfig {
 	}
 
 	@Bean
-	@Profile("!test")
 	@Autowired
 	FirehoseAuthenticationManager authManager(NozzleProperties properties) {
 		return new FirehoseAuthenticationManager(uaaClient(properties), properties);
 	}
 
 	@Bean
-	@Profile("!test")
 	@Autowired
 	FirehoseReader firehoseReader(NozzleProperties properties, InfluxDBWriter writer) {
 		return new FirehoseReader(dopplerClient(properties), properties, writer);
+	}
+
+	@Bean
+	RestTemplate defaultRestTemplate() {
+		return new RestTemplate();
 	}
 
 	private String getApiHost(NozzleProperties properties) {
