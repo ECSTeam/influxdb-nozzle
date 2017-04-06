@@ -18,7 +18,9 @@ package com.ecsteam.nozzle.influxdb.config;
 import com.ecsteam.nozzle.influxdb.nozzle.BackoffPolicy;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.retry.annotation.Backoff;
+
+import java.util.HashMap;
+import java.util.Map;
 
 @Data
 @ConfigurationProperties(prefix = "influxdb.nozzle")
@@ -98,4 +100,9 @@ public class NozzleProperties {
 	 * Skip SSL validation when connecting to the firehose
 	 */
 	private boolean skipSslValidation = false;
+
+	/**
+	 * whether or not fields in the Envelope should be tagged.
+	 */
+	private Map<String, Boolean> tagFields = new HashMap<>();
 }

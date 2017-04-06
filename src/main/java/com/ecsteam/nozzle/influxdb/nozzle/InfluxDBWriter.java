@@ -42,6 +42,7 @@ public class InfluxDBWriter {
 
 	private final ResettableCountDownLatch latch;
 	private final List<String> messages;
+	private final Map<String, Boolean> tagFields;
 
 	private String foundation;
 
@@ -50,6 +51,7 @@ public class InfluxDBWriter {
 		log.info("Initializing DB Writer with batch size {}", properties.getBatchSize());
 		this.messages = Collections.synchronizedList(new ArrayList<>());
 		this.latch = new ResettableCountDownLatch(properties.getBatchSize());
+		this.tagFields = properties.getTagFields();
 
 		this.foundation = properties.getFoundation();
 
@@ -72,6 +74,8 @@ public class InfluxDBWriter {
 
 		CounterEvent ce = envelope.getCounterEvent();
 		ValueMetric vm = envelope.getValueMetric();
+
+		messageBuilder.append(envelope.getOrigin()).append('.');
 
 		messageBuilder.append(ce == null ? vm.getName() : ce.getName());
 		getTags(envelope).forEach((k, v) -> messageBuilder.append(",").append(k).append("=").append(v));
@@ -98,7 +102,7 @@ public class InfluxDBWriter {
 			tags.put("foundation", foundation);
 		}
 
-		if (!CollectionUtils.isEmpty(envelope.getTags())) {
+		if (isTaggableField("tags") && !CollectionUtils.isEmpty(envelope.getTags())) {
 			envelope.getTags().forEach((k, v) -> {
 				if (StringUtils.hasText(v)) {
 					tags.put(k, v);
@@ -106,28 +110,25 @@ public class InfluxDBWriter {
 			});
 		}
 
-		if (StringUtils.hasText(envelope.getOrigin())) {
-			tags.put("origin", envelope.getOrigin());
-		}
 
-		if (StringUtils.hasText(envelope.getIp())) {
+		if (isTaggableField("IP") && StringUtils.hasText(envelope.getIp())) {
 			tags.put("ip", envelope.getIp());
 		}
 
-		if (StringUtils.hasText(envelope.getDeployment())) {
+		if (isTaggableField("DEPLOYMENT") && StringUtils.hasText(envelope.getDeployment())) {
 			tags.put("deployment", envelope.getDeployment());
 		}
 
-		if (StringUtils.hasText(envelope.getJob())) {
+		if (isTaggableField("JOB") && StringUtils.hasText(envelope.getJob())) {
 			tags.put("job", envelope.getJob());
 		}
 
-		if (StringUtils.hasText(envelope.getIndex())) {
+		if (isTaggableField("INDEX") && StringUtils.hasText(envelope.getIndex())) {
 			tags.put("index", envelope.getIndex());
 		}
 
 		if (envelope.getValueMetric() != null) {
-			if (StringUtils.hasText(envelope.getValueMetric().getUnit())) {
+			if (isTaggableField("UNIT") && StringUtils.hasText(envelope.getValueMetric().getUnit())) {
 				tags.put("unit", envelope.getValueMetric().getUnit());
 			}
 
@@ -135,7 +136,7 @@ public class InfluxDBWriter {
 		}
 
 		if (envelope.getCounterEvent() != null) {
-			if (envelope.getCounterEvent().getDelta() != null) {
+			if (isTaggableField("DELTA") && envelope.getCounterEvent().getDelta() != null) {
 				tags.put("delta", envelope.getCounterEvent().getDelta().toString());
 			}
 
@@ -143,5 +144,17 @@ public class InfluxDBWriter {
 		}
 
 		return tags;
+	}
+
+	private boolean isTaggableField(String field) {
+		if (!StringUtils.hasText(field)) {
+			return false;
+		}
+
+		if (!tagFields.containsKey(field)) {
+			return false;
+		}
+
+		return tagFields.get(field);
 	}
 }
