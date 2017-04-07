@@ -1,12 +1,15 @@
-# influxdb-nozzle
+# Cloud Foundry Firehose Nozzle for InfluxDB
+
+This nozzle will take `ValueMetric` and `CounterEvent` metrics from the Cloud Foundry firehose and send them to an InfluxDB
+Server for storage. It can be horizontally scaled, as long as the subscription ID (see below) is the same across all instances
 
 ## Build
 
-`./mvnw clean package
+`./mvnw clean package`
 
 ## Run
 
-Environment Variables
+Accepted Environment Variables
 
 Name | Desc | Type | Required | Default
 --- | --- | --- | --- | ---
@@ -22,3 +25,9 @@ Name | Desc | Type | Required | Default
 `INFLUXDB_NOZZLE_MIN_BACKOFF` | Time in millis to wait between retries, at least | long | Y | 100
 `INFLUXDB_NOZZLE_MAX_BACKOFF` | Time in millis to wait between retries, at most | long | Y | 30000
 `INFLUXDB_NOZZLE_MAX_RETRIES` | Max number of retries before giving up | int | Y | 10
+`INFLUXDB_NOZZLE_SUBSCRIPTION_ID` | The identifying string for the Cloud Foundry firehose. Must be the same across all instances, but must be unique from all other nozzles. | String | Y | `influxdb-nozzle`
+`INFLUXDB_NOZZLE_TAG_FIELDS` | Metric fields that can be saved as InfluxDB tags. Current accepted values are `job`, `index`, `deployment`, `tags`, `delta`, `unit`. Must be sent as a JSON list. For example, `["job","index","unit"]` | String | Y | `[]`
+
+**Note about Batch Size**: There is a direct correlation between the batch size and the amount of memory used. Running 
+the app on Cloud Foundry, a batch size of 250 routinely uses around 550 MB RAM. A batch size of 500 will routinely go over
+1 GB. 
