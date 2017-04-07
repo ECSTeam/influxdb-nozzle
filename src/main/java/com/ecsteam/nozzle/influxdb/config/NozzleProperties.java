@@ -16,11 +16,14 @@
 package com.ecsteam.nozzle.influxdb.config;
 
 import com.ecsteam.nozzle.influxdb.nozzle.BackoffPolicy;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 @Data
 @ConfigurationProperties(prefix = "influxdb.nozzle")
@@ -104,5 +107,10 @@ public class NozzleProperties {
 	/**
 	 * whether or not fields in the Envelope should be tagged.
 	 */
-	private Map<String, Boolean> tagFields = new HashMap<>();
+	private final List<String> tagFields = new ArrayList<>();
+
+	public void setTagFields(String fieldJson) throws IOException {
+		ObjectMapper mapper = new ObjectMapper();
+		tagFields.addAll(mapper.readValue(fieldJson, new TypeReference<List<String>>() {}));
+	}
 }

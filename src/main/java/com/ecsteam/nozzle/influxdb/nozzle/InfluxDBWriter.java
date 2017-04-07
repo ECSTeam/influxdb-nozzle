@@ -42,7 +42,7 @@ public class InfluxDBWriter {
 
 	private final ResettableCountDownLatch latch;
 	private final List<String> messages;
-	private final Map<String, Boolean> tagFields;
+	private final List<String> tagFields;
 
 	private String foundation;
 
@@ -69,24 +69,59 @@ public class InfluxDBWriter {
 	 * @param envelope The event from the Firehose
 	 */
 	@Async
-	public void writeMessage(Envelope envelope) {
+	void writeMessage(Envelope envelope) {
 		final StringBuilder messageBuilder = new StringBuilder();
 
-		CounterEvent ce = envelope.getCounterEvent();
-		ValueMetric vm = envelope.getValueMetric();
+		writeValueMetric(messageBuilder, envelope);
+		writeCounterEventTotal(messageBuilder, envelope);
 
-		messageBuilder.append(envelope.getOrigin()).append('.');
+		if (isTaggableField("delta")) {
+			writeCounterEventDelta(messageBuilder, envelope);
+		}
+	}
 
-		messageBuilder.append(ce == null ? vm.getName() : ce.getName());
+	private void writeCommonSeriesData(StringBuilder messageBuilder, Envelope envelope, String metricName) {
+		messageBuilder.append(envelope.getOrigin()).append('.').append(metricName);
 		getTags(envelope).forEach((k, v) -> messageBuilder.append(",").append(k).append("=").append(v));
+	}
 
-		messageBuilder.append(" value=").append(ce == null ? vm.value() : ce.getTotal())
-				.append(" ")
-				.append(envelope.getTimestamp());
+	private void finishMessage(StringBuilder messageBuilder, Envelope envelope) {
+		messageBuilder.append(' ').append(envelope.getTimestamp());
 
-		this.messages.add(messageBuilder.toString());
-
+		messages.add(messageBuilder.toString());
 		latch.countDown();
+
+		messageBuilder.delete(0, messageBuilder.length());
+	}
+
+	private void writeValueMetric(StringBuilder messageBuilder, Envelope envelope) {
+		ValueMetric metric = envelope.getValueMetric();
+
+		if (metric != null) {
+			writeCommonSeriesData(messageBuilder, envelope, metric.getName());
+			messageBuilder.append(",eventType=ValueMetric value=").append(metric.value());
+			finishMessage(messageBuilder, envelope);
+		}
+	}
+
+	private void writeCounterEventTotal(StringBuilder messageBuilder, Envelope envelope) {
+		CounterEvent event = envelope.getCounterEvent();
+
+		if (event != null) {
+			writeCommonSeriesData(messageBuilder, envelope, event.getName());
+			messageBuilder.append(",eventType=CounterEvent,valueType=total value=").append(event.getTotal());
+			finishMessage(messageBuilder, envelope);
+		}
+	}
+
+	private void writeCounterEventDelta(StringBuilder messageBuilder, Envelope envelope) {
+		CounterEvent event = envelope.getCounterEvent();
+
+		if (event != null) {
+			writeCommonSeriesData(messageBuilder, envelope, event.getName());
+			messageBuilder.append(",eventType=CounterEvent,valueType=delta value=").append(event.getDelta());
+			finishMessage(messageBuilder, envelope);
+		}
 	}
 
 	/**
@@ -111,50 +146,32 @@ public class InfluxDBWriter {
 		}
 
 
-		if (isTaggableField("IP") && StringUtils.hasText(envelope.getIp())) {
+		if (isTaggableField("ip") && StringUtils.hasText(envelope.getIp())) {
 			tags.put("ip", envelope.getIp());
 		}
 
-		if (isTaggableField("DEPLOYMENT") && StringUtils.hasText(envelope.getDeployment())) {
+		if (isTaggableField("deployment") && StringUtils.hasText(envelope.getDeployment())) {
 			tags.put("deployment", envelope.getDeployment());
 		}
 
-		if (isTaggableField("JOB") && StringUtils.hasText(envelope.getJob())) {
+		if (isTaggableField("job") && StringUtils.hasText(envelope.getJob())) {
 			tags.put("job", envelope.getJob());
 		}
 
-		if (isTaggableField("INDEX") && StringUtils.hasText(envelope.getIndex())) {
+		if (isTaggableField("index") && StringUtils.hasText(envelope.getIndex())) {
 			tags.put("index", envelope.getIndex());
 		}
 
 		if (envelope.getValueMetric() != null) {
-			if (isTaggableField("UNIT") && StringUtils.hasText(envelope.getValueMetric().getUnit())) {
+			if (isTaggableField("unit") && StringUtils.hasText(envelope.getValueMetric().getUnit())) {
 				tags.put("unit", envelope.getValueMetric().getUnit());
 			}
-
-			tags.put("eventType", "ValueMetric");
-		}
-
-		if (envelope.getCounterEvent() != null) {
-			if (isTaggableField("DELTA") && envelope.getCounterEvent().getDelta() != null) {
-				tags.put("delta", envelope.getCounterEvent().getDelta().toString());
-			}
-
-			tags.put("eventType", "CounterEvent");
 		}
 
 		return tags;
 	}
 
 	private boolean isTaggableField(String field) {
-		if (!StringUtils.hasText(field)) {
-			return false;
-		}
-
-		if (!tagFields.containsKey(field)) {
-			return false;
-		}
-
-		return tagFields.get(field);
+		return StringUtils.hasText(field) && tagFields.contains(field);
 	}
 }
