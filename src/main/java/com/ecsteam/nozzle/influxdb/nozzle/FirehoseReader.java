@@ -81,11 +81,8 @@ public class FirehoseReader implements SmartLifecycle {
 	}
 
 	private void receiveEvent(Envelope envelope) {
-		switch (envelope.getEventType()) {
-			case COUNTER_EVENT:
-			case VALUE_METRIC:
-				writer.writeMessage(envelope);
-				break;
+		if (properties.getCapturedEvents().contains(envelope.getEventType())) {
+			writer.writeMessage(envelope);
 		}
 	}
 

@@ -19,11 +19,14 @@ import com.ecsteam.nozzle.influxdb.nozzle.BackoffPolicy;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Data;
+import org.cloudfoundry.doppler.EventType;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Data
 @ConfigurationProperties(prefix = "influxdb.nozzle")
@@ -109,8 +112,33 @@ public class NozzleProperties {
 	 */
 	private final List<String> tagFields = new ArrayList<>();
 
-	public void setTagFields(String fieldJson) throws IOException {
-		ObjectMapper mapper = new ObjectMapper();
-		tagFields.addAll(mapper.readValue(fieldJson, new TypeReference<List<String>>() {}));
+	/**
+	 * The event types to send to influxdb. Valid types are ContainerMetric,
+	 * CounterEvent, and ValueMetric
+	 */
+	private final List<EventType> capturedEvents = new ArrayList<>();
+
+	public void setTagFields(String fieldJson) {
+		parseList(fieldJson, tagFields);
+	}
+
+	public void setCapturedEvents(String fieldJson) {
+		List<String> eventNames = new ArrayList<>();
+		parseList(fieldJson, eventNames);
+
+		capturedEvents.clear();
+		capturedEvents.addAll(eventNames.stream().map(EventType::valueOf).collect(Collectors.toList()));
+	}
+
+	private void parseList(String list, List<String> target) {
+		target.clear();
+
+		try {
+			ObjectMapper mapper = new ObjectMapper();
+			target.addAll(mapper.readValue(list, new TypeReference<List<String>>() {}));
+		} catch (IOException e) {
+			String[] items = list.split("\\s*,\\s*");
+			target.addAll(Arrays.asList(items));
+		}
 	}
 }

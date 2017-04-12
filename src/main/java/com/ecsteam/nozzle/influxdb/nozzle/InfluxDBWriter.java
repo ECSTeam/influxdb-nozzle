@@ -15,9 +15,11 @@
 
 package com.ecsteam.nozzle.influxdb.nozzle;
 
+import com.ecsteam.nozzle.influxdb.config.AppDataCache;
 import com.ecsteam.nozzle.influxdb.config.NozzleProperties;
 import com.ecsteam.nozzle.influxdb.destination.MetricsDestination;
 import lombok.extern.slf4j.Slf4j;
+import org.cloudfoundry.doppler.ContainerMetric;
 import org.cloudfoundry.doppler.CounterEvent;
 import org.cloudfoundry.doppler.Envelope;
 import org.cloudfoundry.doppler.ValueMetric;
@@ -30,6 +32,7 @@ import org.springframework.util.StringUtils;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -43,15 +46,18 @@ public class InfluxDBWriter {
 	private final ResettableCountDownLatch latch;
 	private final List<String> messages;
 	private final List<String> tagFields;
+	private final AppDataCache appDataCache;
 
 	private String foundation;
 
 	@Autowired
-	public InfluxDBWriter(NozzleProperties properties, MetricsDestination destination, InfluxDBSender sender) {
+	public InfluxDBWriter(NozzleProperties properties, MetricsDestination destination, InfluxDBSender sender, AppDataCache appDataCache) {
 		log.info("Initializing DB Writer with batch size {}", properties.getBatchSize());
 		this.messages = Collections.synchronizedList(new ArrayList<>());
 		this.latch = new ResettableCountDownLatch(properties.getBatchSize());
 		this.tagFields = properties.getTagFields();
+
+		this.appDataCache = appDataCache;
 
 		this.foundation = properties.getFoundation();
 
@@ -72,17 +78,27 @@ public class InfluxDBWriter {
 	void writeMessage(Envelope envelope) {
 		final StringBuilder messageBuilder = new StringBuilder();
 
-		writeValueMetric(messageBuilder, envelope);
-		writeCounterEventTotal(messageBuilder, envelope);
+		switch (envelope.getEventType()) {
+			case VALUE_METRIC:
+				writeValueMetric(messageBuilder, envelope);
+				break;
+			case COUNTER_EVENT:
+				writeCounterEventTotal(messageBuilder, envelope);
 
-		if (isTaggableField("delta")) {
-			writeCounterEventDelta(messageBuilder, envelope);
+				if (isTaggableField("delta")) {
+					writeCounterEventDelta(messageBuilder, envelope);
+				}
+				break;
+			case CONTAINER_METRIC:
+				writeContainerMetric(messageBuilder, envelope);
+				break;
 		}
 	}
 
-	private void writeCommonSeriesData(StringBuilder messageBuilder, Envelope envelope, String metricName) {
+	private void writeCommonSeriesData(StringBuilder messageBuilder, Envelope envelope,
+									   String metricName, Map<String, String> tags) {
 		messageBuilder.append(envelope.getOrigin()).append('.').append(metricName);
-		getTags(envelope).forEach((k, v) -> messageBuilder.append(",").append(k).append("=").append(v));
+		tags.forEach((k, v) -> messageBuilder.append(",").append(k).append("=").append(v));
 	}
 
 	private void finishMessage(StringBuilder messageBuilder, Envelope envelope) {
@@ -94,12 +110,39 @@ public class InfluxDBWriter {
 		messageBuilder.delete(0, messageBuilder.length());
 	}
 
+	private void writeContainerMetric(StringBuilder messageBuilder, Envelope envelope) {
+		ContainerMetric metric = envelope.getContainerMetric();
+
+		if (metric != null) {
+			Map<String, String> tags = getTags(envelope);
+
+			if (metric.getApplicationId() != null) {
+				tags.putAll(appDataCache.getAppData(metric.getApplicationId()));
+			}
+
+			writeCommonSeriesData(messageBuilder, envelope, "ContainerMetric", tags);
+
+			Map<String, Number> values = new LinkedHashMap<>();
+			values.put("instanceIndex", metric.getInstanceIndex());
+			values.put("cpuPercentage", metric.getCpuPercentage());
+			values.put("diskBytes", metric.getDiskBytes());
+			values.put("diskBytesQuota", metric.getDiskBytesQuota());
+			values.put("memoryBytes", metric.getMemoryBytes());
+			values.put("memoryBytesQuota", metric.getMemoryBytesQuota());
+
+			values.forEach((k,v) -> messageBuilder.append(" ").append(k).append("=").append(v));
+			finishMessage(messageBuilder, envelope);
+		}
+	}
+
 	private void writeValueMetric(StringBuilder messageBuilder, Envelope envelope) {
 		ValueMetric metric = envelope.getValueMetric();
 
 		if (metric != null) {
-			writeCommonSeriesData(messageBuilder, envelope, metric.getName());
-			messageBuilder.append(",eventType=ValueMetric value=").append(metric.value());
+			Map<String, String> tags = getTags(envelope);
+			tags.put("eventType", "ValueMetric");
+			writeCommonSeriesData(messageBuilder, envelope, metric.getName(), tags);
+			messageBuilder.append(" value=").append(metric.value());
 			finishMessage(messageBuilder, envelope);
 		}
 	}
@@ -108,8 +151,11 @@ public class InfluxDBWriter {
 		CounterEvent event = envelope.getCounterEvent();
 
 		if (event != null) {
-			writeCommonSeriesData(messageBuilder, envelope, event.getName());
-			messageBuilder.append(",eventType=CounterEvent,valueType=total value=").append(event.getTotal());
+			Map<String, String> tags = getTags(envelope);
+			tags.put("eventType", "CounterEvent");
+			tags.put("valueType", "total");
+			writeCommonSeriesData(messageBuilder, envelope, event.getName(), tags);
+			messageBuilder.append(" value=").append(event.getTotal());
 			finishMessage(messageBuilder, envelope);
 		}
 	}
@@ -118,8 +164,11 @@ public class InfluxDBWriter {
 		CounterEvent event = envelope.getCounterEvent();
 
 		if (event != null) {
-			writeCommonSeriesData(messageBuilder, envelope, event.getName());
-			messageBuilder.append(",eventType=CounterEvent,valueType=delta value=").append(event.getDelta());
+			Map<String, String> tags = getTags(envelope);
+			tags.put("eventType", "CounterEvent");
+			tags.put("valueType", "delta");
+			writeCommonSeriesData(messageBuilder, envelope, event.getName(), tags);
+			messageBuilder.append(" value=").append(event.getDelta());
 			finishMessage(messageBuilder, envelope);
 		}
 	}

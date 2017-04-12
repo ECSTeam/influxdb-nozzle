@@ -18,8 +18,10 @@ package com.ecsteam.nozzle.influxdb.config;
 import com.ecsteam.nozzle.influxdb.nozzle.FirehoseAuthenticationManager;
 import com.ecsteam.nozzle.influxdb.nozzle.FirehoseReader;
 import com.ecsteam.nozzle.influxdb.nozzle.InfluxDBWriter;
+import org.cloudfoundry.client.CloudFoundryClient;
 import org.cloudfoundry.reactor.DefaultConnectionContext;
 import org.cloudfoundry.reactor.TokenProvider;
+import org.cloudfoundry.reactor.client.ReactorCloudFoundryClient;
 import org.cloudfoundry.reactor.doppler.ReactorDopplerClient;
 import org.cloudfoundry.reactor.tokenprovider.ClientCredentialsGrantTokenProvider;
 import org.cloudfoundry.reactor.uaa.ReactorUaaClient;
@@ -69,6 +71,14 @@ public class FirehoseConfig {
 				.build();
 	}
 
+	private CloudFoundryClient cfClient(NozzleProperties properties) {
+		return ReactorCloudFoundryClient.builder()
+				.connectionContext(connectionContext(getApiHost(properties), properties.isSkipSslValidation()))
+				.tokenProvider(tokenProvider(properties.getClientId(), properties.getClientSecret()))
+				.build();
+	}
+
+
 	@Bean
 	@Profile("!test")
 	@Autowired
@@ -83,6 +93,19 @@ public class FirehoseConfig {
 		return new FirehoseReader(dopplerClient(properties), properties, writer);
 	}
 
+	@Bean
+	@Profile("!test")
+	@Autowired
+	AppDataCache appDataCache(NozzleProperties properties) {
+		return new AppDataCache(cfClient(properties));
+	}
+
+	@Bean
+	@Profile("test")
+	AppDataCache testAppDataCache() {
+		return new AppDataCache(null);
+	}
+
 	private String getApiHost(NozzleProperties properties) {
 		String apiHost = properties.getApiHost();
 
@@ -92,8 +115,8 @@ public class FirehoseConfig {
 			apiHost = url.getHost();
 		} catch (MalformedURLException e) {
 			// this will happen if passed directly as "api.{SYSTEM_DOMAIN}"
-		} finally {
-			return apiHost;
 		}
+
+		return apiHost;
 	}
 }
