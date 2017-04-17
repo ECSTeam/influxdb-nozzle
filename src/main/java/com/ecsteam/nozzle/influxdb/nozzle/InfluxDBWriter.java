@@ -1,4 +1,4 @@
-/*******************************************************************************
+/* *****************************************************************************
  *  Copyright 2017 ECS Team, Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use
@@ -11,7 +11,7 @@
  *  under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
  *  CONDITIONS OF ANY KIND, either express or implied. See the License for the
  *  specific language governing permissions and limitations under the License.
- ******************************************************************************/
+ * ****************************************************************************/
 
 package com.ecsteam.nozzle.influxdb.nozzle;
 
@@ -73,11 +73,7 @@ public class InfluxDBWriter {
 		final StringBuilder messageBuilder = new StringBuilder();
 
 		writeValueMetric(messageBuilder, envelope);
-		writeCounterEventTotal(messageBuilder, envelope);
-
-		if (isTaggableField("delta")) {
-			writeCounterEventDelta(messageBuilder, envelope);
-		}
+		writeCounterEvent(messageBuilder, envelope);
 	}
 
 	private void writeCommonSeriesData(StringBuilder messageBuilder, Envelope envelope, String metricName) {
@@ -104,22 +100,13 @@ public class InfluxDBWriter {
 		}
 	}
 
-	private void writeCounterEventTotal(StringBuilder messageBuilder, Envelope envelope) {
+	private void writeCounterEvent(StringBuilder messageBuilder, Envelope envelope) {
 		CounterEvent event = envelope.getCounterEvent();
 
 		if (event != null) {
 			writeCommonSeriesData(messageBuilder, envelope, event.getName());
-			messageBuilder.append(",eventType=CounterEvent,valueType=total value=").append(event.getTotal());
-			finishMessage(messageBuilder, envelope);
-		}
-	}
-
-	private void writeCounterEventDelta(StringBuilder messageBuilder, Envelope envelope) {
-		CounterEvent event = envelope.getCounterEvent();
-
-		if (event != null) {
-			writeCommonSeriesData(messageBuilder, envelope, event.getName());
-			messageBuilder.append(",eventType=CounterEvent,valueType=delta value=").append(event.getDelta());
+			messageBuilder.append(",eventType=CounterEvent total=").append(event.getTotal());
+			messageBuilder.append(" delta=").append(event.getDelta());
 			finishMessage(messageBuilder, envelope);
 		}
 	}
