@@ -106,7 +106,7 @@ public class InfluxDBWriter {
 		if (event != null) {
 			writeCommonSeriesData(messageBuilder, envelope, event.getName());
 			messageBuilder.append(",eventType=CounterEvent total=").append(event.getTotal());
-			messageBuilder.append(" delta=").append(event.getDelta());
+			messageBuilder.append(",delta=").append(event.getDelta());
 			finishMessage(messageBuilder, envelope);
 		}
 	}
