@@ -32,7 +32,7 @@ public class TileDeployedInfluxDbDestination implements MetricsDestination {
 
 	@Override
 	public String getInfluxDbHost() {
-		return String.format("http://influxdb.%s", getSystemDomain());
+		return String.format("https://influxdb.%s", getSystemDomain());
 	}
 
 	private String getSystemDomain() {

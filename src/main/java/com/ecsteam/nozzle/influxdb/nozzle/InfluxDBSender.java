@@ -19,11 +19,16 @@ import com.ecsteam.nozzle.influxdb.config.NozzleProperties;
 import com.ecsteam.nozzle.influxdb.destination.MetricsDestination;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
+import org.apache.http.conn.ssl.TrustStrategy;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.RequestEntity;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.ClientHttpResponse;
+import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.retry.backoff.BackOffPolicy;
 import org.springframework.retry.backoff.ExponentialBackOffPolicy;
 import org.springframework.retry.backoff.FixedBackOffPolicy;
@@ -36,8 +41,11 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.ResponseErrorHandler;
 import org.springframework.web.client.RestTemplate;
 
+import javax.annotation.PostConstruct;
+import javax.net.ssl.SSLContext;
 import java.io.IOException;
 import java.net.URI;
+import java.security.cert.X509Certificate;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -56,6 +64,30 @@ public class InfluxDBSender {
 
 	private final NozzleProperties properties;
 	private final MetricsDestination influxDbDestination;
+
+	@PostConstruct
+	public void postConstruct() throws Exception {
+		if (properties.isSkipSslValidation()) {
+			TrustStrategy acceptingTrustStrategy = (X509Certificate[] chain, String authType) -> true;
+
+			SSLContext sslContext = org.apache.http.ssl.SSLContexts.custom()
+					.loadTrustMaterial(null, acceptingTrustStrategy)
+					.build();
+
+			SSLConnectionSocketFactory csf = new SSLConnectionSocketFactory(sslContext);
+
+			CloseableHttpClient apacheHttpClient = HttpClients.custom()
+					.setSSLSocketFactory(csf)
+					.build();
+
+			HttpComponentsClientHttpRequestFactory requestFactory =
+					new HttpComponentsClientHttpRequestFactory();
+
+			requestFactory.setHttpClient(apacheHttpClient);
+
+			this.httpClient.setRequestFactory(requestFactory);
+		}
+	}
 
 	@Async
 	public void sendBatch(List<String> messages) {

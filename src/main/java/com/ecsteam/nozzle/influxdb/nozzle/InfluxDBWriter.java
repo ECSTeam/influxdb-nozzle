@@ -1,4 +1,4 @@
-/*******************************************************************************
+/* *****************************************************************************
  *  Copyright 2017 ECS Team, Inc.
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use
@@ -11,7 +11,7 @@
  *  under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
  *  CONDITIONS OF ANY KIND, either express or implied. See the License for the
  *  specific language governing permissions and limitations under the License.
- ******************************************************************************/
+ * ****************************************************************************/
 
 package com.ecsteam.nozzle.influxdb.nozzle;
 
@@ -35,6 +35,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Captures messages from the Cloud Foundry Firehose and batches them to be sent to InfluxDB
@@ -83,11 +84,7 @@ public class InfluxDBWriter {
 				writeValueMetric(messageBuilder, envelope);
 				break;
 			case COUNTER_EVENT:
-				writeCounterEventTotal(messageBuilder, envelope);
-
-				if (isTaggableField("delta")) {
-					writeCounterEventDelta(messageBuilder, envelope);
-				}
+				writeCounterEvent(messageBuilder, envelope);
 				break;
 			case CONTAINER_METRIC:
 				writeContainerMetric(messageBuilder, envelope);
@@ -130,7 +127,11 @@ public class InfluxDBWriter {
 			values.put("memoryBytes", metric.getMemoryBytes());
 			values.put("memoryBytesQuota", metric.getMemoryBytesQuota());
 
-			values.forEach((k,v) -> messageBuilder.append(" ").append(k).append("=").append(v));
+			messageBuilder.append(" ").append(values.entrySet().stream()
+					.map(entry -> String.format("%s=%s", entry.getKey(), entry.getValue()))
+					.collect(Collectors.joining(",")));
+
+			//values.forEach((k,v) -> messageBuilder.append(" ").append(k).append("=").append(v));
 			finishMessage(messageBuilder, envelope);
 		}
 	}
@@ -147,28 +148,16 @@ public class InfluxDBWriter {
 		}
 	}
 
-	private void writeCounterEventTotal(StringBuilder messageBuilder, Envelope envelope) {
+	private void writeCounterEvent(StringBuilder messageBuilder, Envelope envelope) {
 		CounterEvent event = envelope.getCounterEvent();
 
 		if (event != null) {
 			Map<String, String> tags = getTags(envelope);
 			tags.put("eventType", "CounterEvent");
-			tags.put("valueType", "total");
-			writeCommonSeriesData(messageBuilder, envelope, event.getName(), tags);
-			messageBuilder.append(" value=").append(event.getTotal());
-			finishMessage(messageBuilder, envelope);
-		}
-	}
 
-	private void writeCounterEventDelta(StringBuilder messageBuilder, Envelope envelope) {
-		CounterEvent event = envelope.getCounterEvent();
-
-		if (event != null) {
-			Map<String, String> tags = getTags(envelope);
-			tags.put("eventType", "CounterEvent");
-			tags.put("valueType", "delta");
 			writeCommonSeriesData(messageBuilder, envelope, event.getName(), tags);
-			messageBuilder.append(" value=").append(event.getDelta());
+			messageBuilder.append(",eventType=CounterEvent total=").append(event.getTotal());
+			messageBuilder.append(",delta=").append(event.getDelta());
 			finishMessage(messageBuilder, envelope);
 		}
 	}
