@@ -19,9 +19,10 @@ package com.ecsteam.nozzle.influxdb.nozzle;
 import com.ecsteam.nozzle.influxdb.config.NozzleProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.cloudfoundry.doppler.DopplerClient;
 import org.cloudfoundry.doppler.Envelope;
 import org.cloudfoundry.doppler.FirehoseRequest;
-import org.cloudfoundry.reactor.doppler.ReactorDopplerClient;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.SmartLifecycle;
 
 /**
@@ -30,9 +31,11 @@ import org.springframework.context.SmartLifecycle;
 @RequiredArgsConstructor
 @Slf4j
 public class FirehoseReader implements SmartLifecycle {
-	private final ReactorDopplerClient dopplerClient;
+	private final DopplerClient dopplerClient;
 	private final NozzleProperties properties;
 	private final FirehoseEventSerializer writer;
+
+	private Runnable onCompleteCallback = () -> {};
 
 	private boolean running = false;
 
@@ -57,6 +60,7 @@ public class FirehoseReader implements SmartLifecycle {
 		dopplerClient.firehose(request)
 				.doOnError(this::receiveError)
 				.retry()
+				.doOnComplete(onCompleteCallback)
 				.subscribe(this::receiveEvent, this::receiveError);
 	}
 
@@ -73,6 +77,13 @@ public class FirehoseReader implements SmartLifecycle {
 	@Override
 	public int getPhase() {
 		return 0;
+	}
+
+	@Autowired(required = false)
+	public void setOnCompleteCallback(Runnable onCompleteCallback) {
+		if (onCompleteCallback != null) {
+			this.onCompleteCallback = onCompleteCallback;
+		}
 	}
 
 	private void receiveEvent(Envelope envelope) {

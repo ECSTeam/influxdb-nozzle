@@ -246,7 +246,7 @@ public class FirehoseEventSerializer {
 	 * @return the tag map
 	 */
 	private Map<String, String> getTags(Envelope envelope) {
-		final Map<String, String> tags = new HashMap<>();
+		final Map<String, String> tags = new LinkedHashMap<>();
 
 		if (StringUtils.hasText(foundation)) {
 			tags.put("foundation", foundation);

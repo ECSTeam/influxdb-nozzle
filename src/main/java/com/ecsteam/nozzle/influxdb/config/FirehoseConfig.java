@@ -20,12 +20,14 @@ import com.ecsteam.nozzle.influxdb.nozzle.FirehoseAuthenticationManager;
 import com.ecsteam.nozzle.influxdb.nozzle.FirehoseReader;
 import com.ecsteam.nozzle.influxdb.nozzle.FirehoseEventSerializer;
 import org.cloudfoundry.client.CloudFoundryClient;
+import org.cloudfoundry.doppler.DopplerClient;
 import org.cloudfoundry.reactor.DefaultConnectionContext;
 import org.cloudfoundry.reactor.TokenProvider;
 import org.cloudfoundry.reactor.client.ReactorCloudFoundryClient;
 import org.cloudfoundry.reactor.doppler.ReactorDopplerClient;
 import org.cloudfoundry.reactor.tokenprovider.ClientCredentialsGrantTokenProvider;
 import org.cloudfoundry.reactor.uaa.ReactorUaaClient;
+import org.cloudfoundry.uaa.UaaClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -53,7 +55,9 @@ public class FirehoseConfig {
 				.build();
 	}
 
-	private ReactorUaaClient uaaClient(NozzleProperties properties) {
+	@Bean
+	@Autowired
+	public UaaClient uaaClient(NozzleProperties properties) {
 		if (StringUtils.hasText(properties.getAdminClientId()) &&
 				StringUtils.hasText(properties.getAdminClientSecret())) {
 
@@ -65,46 +69,40 @@ public class FirehoseConfig {
 		return null;
 	}
 
-	private ReactorDopplerClient dopplerClient(NozzleProperties properties) {
+	@Bean
+	@Autowired
+	public DopplerClient dopplerClient(NozzleProperties properties) {
 		return ReactorDopplerClient.builder()
 				.connectionContext(connectionContext(getApiHost(properties), properties.isSkipSslValidation()))
 				.tokenProvider(tokenProvider(properties.getClientId(), properties.getClientSecret()))
 				.build();
 	}
 
-	private CloudFoundryClient cfClient(NozzleProperties properties) {
+	@Bean
+	@Autowired
+	public CloudFoundryClient cfClient(NozzleProperties properties) {
 		return ReactorCloudFoundryClient.builder()
 				.connectionContext(connectionContext(getApiHost(properties), properties.isSkipSslValidation()))
 				.tokenProvider(tokenProvider(properties.getClientId(), properties.getClientSecret()))
 				.build();
 	}
 
-
 	@Bean
-	@Profile("!test")
 	@Autowired
-	FirehoseAuthenticationManager authManager(NozzleProperties properties) {
-		return new FirehoseAuthenticationManager(uaaClient(properties), properties);
+	FirehoseAuthenticationManager authManager(UaaClient uaaClient, NozzleProperties properties) {
+		return new FirehoseAuthenticationManager(uaaClient, properties);
 	}
 
 	@Bean
-	@Profile("!test")
 	@Autowired
-	FirehoseReader firehoseReader(NozzleProperties properties, FirehoseEventSerializer writer) {
-		return new FirehoseReader(dopplerClient(properties), properties, writer);
+	FirehoseReader firehoseReader(DopplerClient dopplerClient, NozzleProperties properties, FirehoseEventSerializer writer) {
+		return new FirehoseReader(dopplerClient, properties, writer);
 	}
 
 	@Bean
-	@Profile("!test")
 	@Autowired
-	AppDataCache appDataCache(NozzleProperties properties) {
-		return new AppDataCache(cfClient(properties));
-	}
-
-	@Bean
-	@Profile("test")
-	AppDataCache testAppDataCache() {
-		return new AppDataCache(null);
+	AppDataCache appDataCache(CloudFoundryClient cfClient) {
+		return new AppDataCache(cfClient);
 	}
 
 	private String getApiHost(NozzleProperties properties) {

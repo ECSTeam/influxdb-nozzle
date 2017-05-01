@@ -24,6 +24,7 @@ import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.conn.ssl.TrustStrategy;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.RequestEntity;
@@ -90,8 +91,15 @@ public class InfluxDBBatchSender {
 		}
 	}
 
+	@Autowired(required = false)
+	public void setHttpClient(RestTemplate httpClient) {
+		if (httpClient != null) {
+			this.httpClient = httpClient;
+		}
+	}
+
 	@Async
-	public void sendBatch(List<String> messages) {
+	void sendBatch(List<String> messages) {
 		log.debug("ENTER sendBatch");
 		httpClient.setErrorHandler(new ResponseErrorHandler() {
 			@Override
