@@ -18,6 +18,8 @@ package com.ecsteam.nozzle.influxdb.config;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.http.NameValuePair;
+import org.apache.http.client.utils.URLEncodedUtils;
 import org.cloudfoundry.client.CloudFoundryClient;
 import org.cloudfoundry.client.v2.applications.ListApplicationsRequest;
 import org.cloudfoundry.client.v2.organizations.ListOrganizationsRequest;
@@ -25,17 +27,16 @@ import org.cloudfoundry.client.v2.spaces.ListSpacesRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.util.StringUtils;
 
+import java.nio.charset.Charset;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 @Slf4j
 @RequiredArgsConstructor
 public class AppDataCache {
 
 	private static final long CACHE_REFRESH = 1800L; // 30 min
-	private static final Pattern PAGE_PARSER = Pattern.compile("[?&]page=(\\d+)");
 
 	private final CloudFoundryClient cfClient;
 
@@ -70,16 +71,17 @@ public class AppDataCache {
 						appToSpaceMap.put(app.getMetadata().getId(), app.getEntity().getSpaceId());
 					});
 
-					if (StringUtils.isEmpty(response.getNextUrl())) {
-						Matcher matcher = PAGE_PARSER.matcher(response.getNextUrl());
-						String pageNumber = matcher.group(1);
-
-						getApps(Integer.valueOf(pageNumber));
+					if (StringUtils.hasText(response.getNextUrl())) {
+						getApps(getNextPageNumber(response.getNextUrl()));
 					}
 				});
 	}
 
 	private void getSpaces(int page) {
+		if (page < 0) {
+			return;
+		}
+
 		cfClient.spaces()
 				.list(ListSpacesRequest.builder()
 						.page(page)
@@ -92,16 +94,17 @@ public class AppDataCache {
 						spaceToOrgMap.put(space.getMetadata().getId(), space.getEntity().getOrganizationId());
 					});
 
-					if (StringUtils.isEmpty(response.getNextUrl())) {
-						Matcher matcher = PAGE_PARSER.matcher(response.getNextUrl());
-						String pageNumber = matcher.group(1);
-
-						getSpaces(Integer.valueOf(pageNumber));
+					if (StringUtils.hasText(response.getNextUrl())) {
+						getSpaces(getNextPageNumber(response.getNextUrl()));
 					}
 				});
 	}
 
 	private void getOrgs(int page) {
+		if (page < 0) {
+			return;
+		}
+
 		cfClient.organizations()
 				.list(ListOrganizationsRequest.builder()
 						.page(page)
@@ -112,13 +115,20 @@ public class AppDataCache {
 					response.getResources()
 							.forEach(org -> orgIdToNameMap.put(org.getMetadata().getId(), org.getEntity().getName()));
 
-					if (StringUtils.isEmpty(response.getNextUrl())) {
-						Matcher matcher = PAGE_PARSER.matcher(response.getNextUrl());
-						String pageNumber = matcher.group(1);
-
-						getOrgs(Integer.valueOf(pageNumber));
+					if (StringUtils.hasText(response.getNextUrl())) {
+						getOrgs(getNextPageNumber(response.getNextUrl()));
 					}
 				});
+	}
+
+	private int getNextPageNumber(String nextUrl) {
+		String queryString = nextUrl.substring(nextUrl.indexOf('?') + 1);
+
+		List<NameValuePair> params = URLEncodedUtils.parse(queryString, Charset.defaultCharset());
+		String pageNum = params.stream().filter(pair -> "page".equalsIgnoreCase(pair.getName()))
+				.map(NameValuePair::getValue).findFirst().orElse("-1");
+
+		return Integer.valueOf(pageNum);
 	}
 
 	public Map<String, String> getAppData(String applicationId) {

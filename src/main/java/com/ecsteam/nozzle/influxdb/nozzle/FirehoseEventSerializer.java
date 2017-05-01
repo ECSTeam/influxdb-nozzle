@@ -1,17 +1,18 @@
-/* *****************************************************************************
- *  Copyright 2017 ECS Team, Inc.
+/*
+ * Copyright 2017 ECS Team, Inc.
  *
- *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use
- *  this file except in compliance with the License. You may obtain a copy of the
- *  License at
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+ * this file except in compliance with the License. You may obtain a copy of the
+ * License at
  *
- *  http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
- *  Unless required by applicable law or agreed to in writing, software distributed
- *  under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
- *  CONDITIONS OF ANY KIND, either express or implied. See the License for the
- *  specific language governing permissions and limitations under the License.
- * ****************************************************************************/
+ * Unless required by applicable law or agreed to in writing, software distributed
+ * under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+ * CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ *
+ */
 
 package com.ecsteam.nozzle.influxdb.nozzle;
 
@@ -22,6 +23,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.cloudfoundry.doppler.ContainerMetric;
 import org.cloudfoundry.doppler.CounterEvent;
 import org.cloudfoundry.doppler.Envelope;
+import org.cloudfoundry.doppler.HttpStartStop;
 import org.cloudfoundry.doppler.ValueMetric;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
@@ -42,7 +44,7 @@ import java.util.stream.Collectors;
  */
 @Service
 @Slf4j
-public class InfluxDBWriter {
+public class FirehoseEventSerializer {
 
 	private final ResettableCountDownLatch latch;
 	private final List<String> messages;
@@ -52,7 +54,7 @@ public class InfluxDBWriter {
 	private String foundation;
 
 	@Autowired
-	public InfluxDBWriter(NozzleProperties properties, MetricsDestination destination, InfluxDBSender sender, AppDataCache appDataCache) {
+	public FirehoseEventSerializer(NozzleProperties properties, MetricsDestination destination, InfluxDBBatchSender sender, AppDataCache appDataCache) {
 		log.info("Initializing DB Writer with batch size {}", properties.getBatchSize());
 		this.messages = Collections.synchronizedList(new ArrayList<>());
 		this.latch = new ResettableCountDownLatch(properties.getBatchSize());
@@ -62,7 +64,7 @@ public class InfluxDBWriter {
 
 		this.foundation = properties.getFoundation();
 
-		new Thread(new InfluxDBBatchListener(latch, messages, sender)).start();
+		new Thread(new BatchedEventListener(latch, messages, sender)).start();
 	}
 
 	/**
@@ -88,6 +90,9 @@ public class InfluxDBWriter {
 				break;
 			case CONTAINER_METRIC:
 				writeContainerMetric(messageBuilder, envelope);
+				break;
+			case HTTP_START_STOP:
+				writeHttpStartStop(messageBuilder, envelope);
 				break;
 		}
 	}
@@ -143,7 +148,10 @@ public class InfluxDBWriter {
 			Map<String, String> tags = getTags(envelope);
 			tags.put("eventType", "ValueMetric");
 			writeCommonSeriesData(messageBuilder, envelope, metric.getName(), tags);
-			messageBuilder.append(" value=").append(metric.value());
+
+			messageBuilder.append(" value=").append(metric.value())
+				.append(",unit=").append(metric.getUnit());
+
 			finishMessage(messageBuilder, envelope);
 		}
 	}
@@ -156,9 +164,78 @@ public class InfluxDBWriter {
 			tags.put("eventType", "CounterEvent");
 
 			writeCommonSeriesData(messageBuilder, envelope, event.getName(), tags);
-			messageBuilder.append(",eventType=CounterEvent total=").append(event.getTotal());
-			messageBuilder.append(",delta=").append(event.getDelta());
+			messageBuilder.append(",eventType=CounterEvent total=").append(event.getTotal())
+				.append(",delta=").append(event.getDelta());
+
 			finishMessage(messageBuilder, envelope);
+		}
+	}
+
+	private void writeHttpStartStop(StringBuilder builder, Envelope envelope) {
+		HttpStartStop event = envelope.getHttpStartStop();
+		if (event != null) {
+			Map<String, String> tags = getTags(envelope);
+			tags.put("eventType", "HttpStartStop");
+
+			if (event.getApplicationId() != null) {
+				tags.putAll(appDataCache.getAppData(event.getApplicationId().toString()));
+			}
+
+			writeCommonSeriesData(builder, envelope, "HttpStartStop", tags);
+
+			Map<String, Object> values = new LinkedHashMap<>();
+
+			if (event.getContentLength() != null) {
+				values.put("contentLength", event.getContentLength());
+			}
+
+			if (event.getInstanceIndex() != null) {
+				values.put("instanceIndex", event.getInstanceIndex());
+			}
+
+			if (event.getStartTimestamp() != null) {
+				values.put("startTimestamp", event.getStartTimestamp());
+			}
+
+			if (event.getStopTimestamp() != null) {
+				values.put("stopTimestamp", event.getStopTimestamp());
+			}
+
+			if (event.getStatusCode() != null) {
+				values.put("statusCode", event.getStatusCode());
+			}
+
+			if (!CollectionUtils.isEmpty(event.getForwarded())) {
+				values.put("forwarded", event.getForwarded().stream().collect(Collectors.joining(",")));
+			}
+
+			if (StringUtils.hasText(event.getInstanceId())) {
+				values.put("instanceId", event.getInstanceId());
+			}
+
+			if (event.getMethod() != null) {
+				values.put("method", event.getMethod().toString());
+			}
+
+			if (event.getPeerType() != null) {
+				values.put("peerType", event.getPeerType().toString());
+			}
+
+			if (StringUtils.hasText(event.getUri())) {
+				values.put("uri", event.getUri());
+			}
+
+			if (StringUtils.hasText(event.getUserAgent())) {
+				values.put("userAgent", event.getUserAgent());
+			}
+
+			if (StringUtils.hasText(event.getRemoteAddress())) {
+				values.put("remoteAddress", event.getRemoteAddress());
+			}
+
+			builder.append(" ").append(values.entrySet().stream()
+					.map(entry -> String.format("%s=%s", entry.getKey(), entry.getValue()))
+					.collect(Collectors.joining(",")));
 		}
 	}
 
