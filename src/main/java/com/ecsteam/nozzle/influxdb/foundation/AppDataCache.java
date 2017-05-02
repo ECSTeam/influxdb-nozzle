@@ -14,7 +14,7 @@
  *
  */
 
-package com.ecsteam.nozzle.influxdb.config;
+package com.ecsteam.nozzle.influxdb.foundation;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,7 +36,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AppDataCache {
 
-	private static final long CACHE_REFRESH = 1800L; // 30 min
+	private static final long CACHE_REFRESH = 1_800_000L; // 30 min
 
 	private final CloudFoundryClient cfClient;
 

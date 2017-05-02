@@ -118,9 +118,14 @@ public class NozzleProperties {
 
 	/**
 	 * The event types to send to influxdb. Valid types are ContainerMetric,
-	 * CounterEvent, and ValueMetric@cary
+	 * CounterEvent, HttpStartStop, and ValueMetric
 	 */
-	private final List<EventType> capturedEvents = new ArrayList<>();
+	private final List<EventType> capturedEvents = new ArrayList<EventType>() {{
+		add(EventType.CONTAINER_METRIC);
+		add(EventType.COUNTER_EVENT);
+		add(EventType.HTTP_START_STOP);
+		add(EventType.VALUE_METRIC);
+	}};
 
 	public void setTagFields(String fieldJson) {
 		parseList(fieldJson, tagFields);

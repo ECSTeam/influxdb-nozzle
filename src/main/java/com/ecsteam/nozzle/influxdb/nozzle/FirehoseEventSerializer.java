@@ -16,7 +16,7 @@
 
 package com.ecsteam.nozzle.influxdb.nozzle;
 
-import com.ecsteam.nozzle.influxdb.config.AppDataCache;
+import com.ecsteam.nozzle.influxdb.foundation.AppDataCache;
 import com.ecsteam.nozzle.influxdb.config.NozzleProperties;
 import com.ecsteam.nozzle.influxdb.destination.MetricsDestination;
 import lombok.extern.slf4j.Slf4j;
@@ -33,7 +33,6 @@ import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;

@@ -18,7 +18,9 @@ package com.ecsteam.nozzle.influxdb.nozzle;
 
 import com.ecsteam.nozzle.influxdb.config.NozzleProperties;
 import com.ecsteam.nozzle.influxdb.destination.MetricsDestination;
+import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.conn.ssl.TrustStrategy;
@@ -31,6 +33,7 @@ import org.springframework.http.RequestEntity;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
+import org.springframework.retry.RetryContext;
 import org.springframework.retry.backoff.BackOffPolicy;
 import org.springframework.retry.backoff.ExponentialBackOffPolicy;
 import org.springframework.retry.backoff.FixedBackOffPolicy;
@@ -51,6 +54,8 @@ import java.security.cert.X509Certificate;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 
 /**
@@ -66,6 +71,9 @@ public class InfluxDBBatchSender {
 
 	private final NozzleProperties properties;
 	private final MetricsDestination influxDbDestination;
+
+	@Setter(AccessLevel.PACKAGE)
+	private Consumer<RetryContext> recoverCallback = (ctx) -> {};
 
 	@PostConstruct
 	public void postConstruct() throws Exception {
@@ -122,10 +130,8 @@ public class InfluxDBBatchSender {
 		retryable.execute(retryContext -> {
 			int count = counter.incrementAndGet();
 			log.trace("Attempt {} to deliver this batch", count);
-			final StringBuilder builder = new StringBuilder();
-			messages.forEach(s -> builder.append(s).append("\n"));
 
-			String body = builder.toString();
+			String body = messages.stream().collect(Collectors.joining("\n"));
 
 			RequestEntity<String> entity =
 					new RequestEntity<>(body, HttpMethod.POST, getUri());
@@ -134,9 +140,8 @@ public class InfluxDBBatchSender {
 
 			response = httpClient.exchange(entity, String.class);
 
-
 			if (response.getStatusCode() != HttpStatus.NO_CONTENT) {
-				log.error("Failed to write logs to InfluxDB! Expected error code 204, got {}", response.getStatusCodeValue());
+				log.error("Failed to write logs to InfluxDB! Expected status code 204, got {}", response.getStatusCodeValue());
 
 				log.trace("Request Body: {}", body);
 				log.trace("Response Body: {}", response.getBody());
@@ -150,6 +155,11 @@ public class InfluxDBBatchSender {
 			return null;
 		}, recoveryContext -> {
 			log.trace("Failed after {} attempts!", counter.get());
+
+			if (recoverCallback != null) {
+				recoverCallback.accept(recoveryContext);
+			}
+
 			return null;
 		});
 	}
