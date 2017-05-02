@@ -23,11 +23,11 @@ import java.util.List;
 
 @RequiredArgsConstructor
 @Slf4j
-public class InfluxDBBatchListener implements Runnable {
+public class BatchedEventListener implements Runnable {
 
 	private final ResettableCountDownLatch latch;
 	private final List<String> messages;
-	private final InfluxDBSender sender;
+	private final InfluxDBBatchSender sender;
 
 	private final ArrayList<String> msgClone = new ArrayList<>();
 
