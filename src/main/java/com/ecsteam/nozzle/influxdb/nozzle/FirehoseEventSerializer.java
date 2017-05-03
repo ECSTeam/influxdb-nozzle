@@ -16,9 +16,9 @@
 
 package com.ecsteam.nozzle.influxdb.nozzle;
 
-import com.ecsteam.nozzle.influxdb.foundation.AppDataCache;
 import com.ecsteam.nozzle.influxdb.config.NozzleProperties;
 import com.ecsteam.nozzle.influxdb.destination.MetricsDestination;
+import com.ecsteam.nozzle.influxdb.foundation.AppDataCache;
 import lombok.extern.slf4j.Slf4j;
 import org.cloudfoundry.doppler.ContainerMetric;
 import org.cloudfoundry.doppler.CounterEvent;
@@ -26,12 +26,14 @@ import org.cloudfoundry.doppler.Envelope;
 import org.cloudfoundry.doppler.HttpStartStop;
 import org.cloudfoundry.doppler.ValueMetric;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.actuate.metrics.CounterService;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -49,11 +51,12 @@ public class FirehoseEventSerializer {
 	private final List<String> messages;
 	private final List<String> tagFields;
 	private final AppDataCache appDataCache;
+	private final CounterService counterService;
 
 	private String foundation;
 
 	@Autowired
-	public FirehoseEventSerializer(NozzleProperties properties, MetricsDestination destination, InfluxDBBatchSender sender, AppDataCache appDataCache) {
+	public FirehoseEventSerializer(NozzleProperties properties, MetricsDestination destination, InfluxDBBatchSender sender, AppDataCache appDataCache, CounterService counterService) {
 		log.info("Initializing DB Writer with batch size {}", properties.getBatchSize());
 		this.messages = Collections.synchronizedList(new ArrayList<>());
 		this.latch = new ResettableCountDownLatch(properties.getBatchSize());
@@ -62,6 +65,8 @@ public class FirehoseEventSerializer {
 		this.appDataCache = appDataCache;
 
 		this.foundation = properties.getFoundation();
+
+		this.counterService = counterService;
 
 		new Thread(new BatchedEventListener(latch, messages, sender)).start();
 	}
@@ -98,6 +103,8 @@ public class FirehoseEventSerializer {
 
 	private void writeCommonSeriesData(StringBuilder messageBuilder, Envelope envelope,
 									   String metricName, Map<String, String> tags) {
+		this.counterService.increment("events.received." + envelope.getEventType().toString());
+
 		messageBuilder.append(envelope.getOrigin()).append('.').append(metricName);
 		tags.forEach((k, v) -> messageBuilder.append(",").append(k).append("=").append(v));
 	}
@@ -116,6 +123,7 @@ public class FirehoseEventSerializer {
 
 		if (metric != null) {
 			Map<String, String> tags = getTags(envelope);
+			tags.put("eventType", "ContainerMetric");
 
 			if (metric.getApplicationId() != null) {
 				tags.putAll(appDataCache.getAppData(metric.getApplicationId()));
@@ -131,11 +139,9 @@ public class FirehoseEventSerializer {
 			values.put("memoryBytes", metric.getMemoryBytes());
 			values.put("memoryBytesQuota", metric.getMemoryBytesQuota());
 
-			messageBuilder.append(" ").append(values.entrySet().stream()
-					.map(entry -> String.format("%s=%s", entry.getKey(), entry.getValue()))
-					.collect(Collectors.joining(",")));
+			List<String> fields = values.entrySet().stream().map((e) -> writeFieldValue(e.getKey(), e.getValue())).filter(StringUtils::hasText).collect(Collectors.toList());
+			messageBuilder.append(" ").append(fields.stream().collect(Collectors.joining(",")));
 
-			//values.forEach((k,v) -> messageBuilder.append(" ").append(k).append("=").append(v));
 			finishMessage(messageBuilder, envelope);
 		}
 	}
@@ -148,8 +154,10 @@ public class FirehoseEventSerializer {
 			tags.put("eventType", "ValueMetric");
 			writeCommonSeriesData(messageBuilder, envelope, metric.getName(), tags);
 
-			messageBuilder.append(" value=").append(metric.value())
-				.append(",unit=").append(metric.getUnit());
+			List<String> fields = Arrays.asList(writeFieldValue("value", metric.value()),
+					writeFieldValue("unit", metric.getUnit()));
+
+			messageBuilder.append(" ").append(fields.stream().filter(StringUtils::hasText).collect(Collectors.joining(",")));
 
 			finishMessage(messageBuilder, envelope);
 		}
@@ -163,8 +171,11 @@ public class FirehoseEventSerializer {
 			tags.put("eventType", "CounterEvent");
 
 			writeCommonSeriesData(messageBuilder, envelope, event.getName(), tags);
-			messageBuilder.append(",eventType=CounterEvent total=").append(event.getTotal())
-				.append(",delta=").append(event.getDelta());
+
+			List<String> fields = Arrays.asList(writeFieldValue("total", event.getTotal()),
+					writeFieldValue("delta", event.getDelta()));
+
+			messageBuilder.append(" ").append(fields.stream().filter(StringUtils::hasText).collect(Collectors.joining(",")));
 
 			finishMessage(messageBuilder, envelope);
 		}
@@ -182,60 +193,45 @@ public class FirehoseEventSerializer {
 
 			writeCommonSeriesData(builder, envelope, "HttpStartStop", tags);
 
-			Map<String, Object> values = new LinkedHashMap<>();
+			List<String> fields = new ArrayList<>();
 
-			if (event.getContentLength() != null) {
-				values.put("contentLength", event.getContentLength());
-			}
-
-			if (event.getInstanceIndex() != null) {
-				values.put("instanceIndex", event.getInstanceIndex());
-			}
-
-			if (event.getStartTimestamp() != null) {
-				values.put("startTimestamp", event.getStartTimestamp());
-			}
-
-			if (event.getStopTimestamp() != null) {
-				values.put("stopTimestamp", event.getStopTimestamp());
-			}
-
-			if (event.getStatusCode() != null) {
-				values.put("statusCode", event.getStatusCode());
-			}
-
+			fields.add(writeFieldValue("contentLength", event.getContentLength()));
+			fields.add(writeFieldValue("instanceIndex", event.getInstanceIndex()));
+			fields.add(writeFieldValue("startTimestamp", event.getStartTimestamp()));
+			fields.add(writeFieldValue("stopTimestamp", event.getStopTimestamp()));
+			fields.add(writeFieldValue("statusCode", event.getStatusCode()));
+			fields.add(writeFieldValue("instanceId", event.getInstanceId()));
+			fields.add(writeFieldValue("method", event.getMethod().toString()));
+			fields.add(writeFieldValue("peerType", event.getPeerType().toString()));
+			fields.add(writeFieldValue("uri", event.getUri()));
+			fields.add(writeFieldValue("userAgent", event.getUserAgent()));
+			fields.add(writeFieldValue("remoteAddress", event.getRemoteAddress()));
 			if (!CollectionUtils.isEmpty(event.getForwarded())) {
-				values.put("forwarded", event.getForwarded().stream().collect(Collectors.joining(",")));
+				fields.add(writeFieldValue("forwarded", event.getForwarded().stream().collect(Collectors.joining(","))));
 			}
 
-			if (StringUtils.hasText(event.getInstanceId())) {
-				values.put("instanceId", event.getInstanceId());
-			}
+			builder.append(" ").append(fields.stream().filter(StringUtils::hasText).collect(Collectors.joining(",")));
 
-			if (event.getMethod() != null) {
-				values.put("method", event.getMethod().toString());
-			}
-
-			if (event.getPeerType() != null) {
-				values.put("peerType", event.getPeerType().toString());
-			}
-
-			if (StringUtils.hasText(event.getUri())) {
-				values.put("uri", event.getUri());
-			}
-
-			if (StringUtils.hasText(event.getUserAgent())) {
-				values.put("userAgent", event.getUserAgent());
-			}
-
-			if (StringUtils.hasText(event.getRemoteAddress())) {
-				values.put("remoteAddress", event.getRemoteAddress());
-			}
-
-			builder.append(" ").append(values.entrySet().stream()
-					.map(entry -> String.format("%s=%s", entry.getKey(), entry.getValue()))
-					.collect(Collectors.joining(",")));
+			finishMessage(builder, envelope);
 		}
+	}
+
+	private String writeFieldValue(String fieldName, Object fieldValue) {
+		StringBuilder buffer = new StringBuilder();
+
+		if (fieldValue != null && StringUtils.hasText(fieldName)) {
+			if (fieldValue instanceof String) {
+				if (StringUtils.hasText(fieldValue.toString().trim())) {
+					buffer.append(fieldName).append("=\"").append(fieldValue).append('"');
+				}
+			} else {
+				buffer.append(fieldName).append('=').append(fieldValue);
+			}
+
+			return buffer.toString();
+		}
+
+		return null;
 	}
 
 	/**
@@ -274,12 +270,6 @@ public class FirehoseEventSerializer {
 
 		if (isTaggableField("index") && StringUtils.hasText(envelope.getIndex())) {
 			tags.put("index", envelope.getIndex());
-		}
-
-		if (envelope.getValueMetric() != null) {
-			if (isTaggableField("unit") && StringUtils.hasText(envelope.getValueMetric().getUnit())) {
-				tags.put("unit", envelope.getValueMetric().getUnit());
-			}
 		}
 
 		return tags;

@@ -108,7 +108,7 @@ public class InfluxDBBatchSender {
 
 	@Async
 	void sendBatch(List<String> messages) {
-		log.debug("ENTER sendBatch");
+		log.trace("ENTER sendBatch");
 		httpClient.setErrorHandler(new ResponseErrorHandler() {
 			@Override
 			public boolean hasError(ClientHttpResponse clientHttpResponse) throws IOException {
@@ -144,13 +144,13 @@ public class InfluxDBBatchSender {
 				log.error("Failed to write logs to InfluxDB! Expected status code 204, got {}", response.getStatusCodeValue());
 
 				log.trace("Request Body: {}", body);
-				log.trace("Response Body: {}", response.getBody());
+				log.debug("Response Body: {}", response.getBody());
 
 			} else {
-				log.debug("batch sent successfully!");
+				log.trace("batch sent successfully!");
 			}
 
-			log.debug("EXIT sendBatch");
+			log.trace("EXIT sendBatch");
 
 			return null;
 		}, recoveryContext -> {

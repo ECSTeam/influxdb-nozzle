@@ -21,9 +21,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.cloudfoundry.doppler.DopplerClient;
 import org.cloudfoundry.doppler.Envelope;
+import org.cloudfoundry.doppler.EventType;
 import org.cloudfoundry.doppler.FirehoseRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.SmartLifecycle;
+
+import java.util.stream.Collectors;
 
 /**
  * Read events from the firehose and delegate to the serializer
@@ -55,6 +58,8 @@ public class FirehoseReader implements SmartLifecycle {
 		log.info("Connecting to the Firehose");
 		FirehoseRequest request = FirehoseRequest.builder()
 				.subscriptionId(properties.getSubscriptionId()).build();
+
+		log.info("Accepting event types: {}", properties.getCapturedEvents().stream().map(EventType::toString).collect(Collectors.joining(",")));
 
 		// Thanks to Ben Hale for the help with the doOnError and retry code.
 		dopplerClient.firehose(request)
